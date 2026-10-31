@@ -19,9 +19,9 @@ final class Watch
 {
     public array $properties;
 
-    public function __construct(string ...$properties)
+    public function __construct(string|array $properties, public readonly int $debounce = 0)
     {
-        $this->properties = $properties;
+        $this->properties = (array) $properties;
     }
 }
 
