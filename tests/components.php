@@ -55,6 +55,7 @@ new class extends Component {
     {
         if ($title === '}') { return 0; }
         if ($title === 'bug') { return strlen([]); }
+        if ($title === 'throw') { throw new RuntimeException('thrown'); }
         return strlen($title) + count($tags);
     }
 
@@ -89,7 +90,8 @@ fails('non-static server method', fn() => Components::strip("<?php new class ext
 $folder = sys_get_temp_dir() . '/ui-server-test-' . getmypid();
 mkdir($folder);
 file_put_contents("$folder/todos.blade.php", $source);
-$components = new Components($folder);
+$cache = "$folder/cache";
+$components = new Components($folder, $cache);
 check('browser source', $components->browserSource('todos'), $stripped);
 check('a TypeError inside the method is its own', (function () use ($components) {
     try {
@@ -122,7 +124,19 @@ check('no path in the message', (function () use ($components) {
         return str_contains($e->getMessage(), sys_get_temp_dir()) || str_contains($e->getMessage(), 'anonymous');
     }
 })(), false);
-unlink("$folder/todos.blade.php");
+try {
+    $components->call('todos', 'add', ['throw']);
+} catch (RuntimeException $e) {
+    check('an error names the component file', $e->getFile(), "$folder/todos.blade.php");
+    check('at its line', explode("\n", $source)[$e->getLine() - 1], "        if (\$title === 'throw') { throw new RuntimeException('thrown'); }");
+}
+check('compiled once', count(glob("$cache/unscripted-todos-*.php")), 1);
+file_put_contents("$folder/todos.blade.php", str_replace('strlen($title) + count($tags)', '100', $source));
+check('an edit is picked up', $components->call('todos', 'add', ['abc']), 100);
+check('the old compiled file is gone', count(glob("$cache/unscripted-todos-*.php")), 1);
+
+array_map('unlink', [...glob("$cache/*"), "$folder/todos.blade.php"]);
+rmdir($cache);
 rmdir($folder);
 
 echo $failed ? "\n$failed failed\n" : "\nall passed\n";

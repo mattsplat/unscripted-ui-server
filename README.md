@@ -30,6 +30,10 @@ See [`@unscripted/ui`'s README](../ui#server-methods) for writing them.
 
 ## Errors
 
+The server loads a component's PHP block from a compiled copy beside Laravel's compiled views
+(`php artisan view:clear` clears them), made again when the file changes. An exception from it
+names the component's own file and line.
+
 A method's exceptions are Laravel's to report, as JSON: a `ValidationException` is a 422 with
 its messages, which the browser gets as a `ServerError` with `$errors`. A call to something
 that isn't a `#[Server]` method is a 404; arguments that don't fit the method's parameters are

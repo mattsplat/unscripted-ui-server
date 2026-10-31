@@ -6,7 +6,9 @@ use Error;
 use ParseError;
 use PhpToken;
 use ReflectionMethod;
+use ReflectionProperty;
 use RuntimeException;
+use Throwable;
 use Unscripted\Ui\Component;
 use Unscripted\Ui\Server;
 
@@ -16,10 +18,12 @@ use Unscripted\Ui\Server;
  */
 final class Components
 {
-    /** Each loaded component's class, by name: a PHP block is eval'd once per process. */
+    /** Each loaded component's class and the hash of the source it came from, by name. */
     private array $classes = [];
 
-    public function __construct(private string $folder) {}
+    /** `$cache` holds each component's PHP block, compiled to a file of its own
+     * (unscripted-<name>-<hash>.php, as Laravel compiles views), so opcache keeps it. */
+    public function __construct(private string $folder, private string $cache) {}
 
     /** The file as the browser gets it, or null if there's no component `$name`. */
     public function browserSource(string $name): ?string
@@ -150,7 +154,7 @@ final class Components
      * such method, or BadArguments if `$args` don't fit it. */
     public function call(string $name, string $method, array $args): mixed
     {
-        $class = $this->load($name);
+        [$class, $path, $compiled] = $this->load($name);
         if (!method_exists($class, $method)) {
             throw new UnknownCall("$name has no server method $method");
         }
@@ -170,8 +174,20 @@ final class Components
                 && preg_match('/^(?:.*?\(\): (Argument #.*)|Too few arguments to function .*?\(\), (.*))$/s', $e->getMessage(), $m)) {
                 throw new BadArguments("$name::$method(): " . ($m[1] !== '' ? $m[1] : "too few arguments, {$m[2]}"), 0, $e);
             }
-            throw $e;
+            throw $this->located($e, $compiled, $path);
+        } catch (Throwable $e) {
+            throw $this->located($e, $compiled, $path);
         }
+    }
+
+    /** An error from the compiled block, said to be from the component's file: the line is
+     * the same. */
+    private function located(Throwable $e, string $compiled, string $path): Throwable
+    {
+        if ($e->getFile() === $compiled) {
+            new ReflectionProperty($e, 'file')->setValue($e, $path);
+        }
+        return $e;
     }
 
     private function path(string $name): ?string
@@ -183,28 +199,46 @@ final class Components
         return is_file($path) ? $path : null;
     }
 
-    /** The class component `$name`'s PHP block makes (as @unscripted/ui's blade() does). */
-    private function load(string $name): string
+    /** The class component `$name`'s PHP block makes (as @unscripted/ui's blade() does), its
+     * file and the compiled file. */
+    private function load(string $name): array
     {
-        if (isset($this->classes[$name])) {
-            return $this->classes[$name];
-        }
         $path = $this->path($name) ?? throw new UnknownCall("there's no component $name");
         $source = file_get_contents($path);
+        $hash = md5($source);
+        if (($this->classes[$name][0] ?? null) === $hash) {
+            return $this->classes[$name][1];
+        }
         $end = str_starts_with(ltrim($source), '<?php') ? strpos($source, '?>') : false;
         if ($end === false || !preg_match('/\bnew\s+class\b/', $source, $m, PREG_OFFSET_CAPTURE) || $m[0][1] > $end) {
             throw new UnknownCall("$name has no server methods: it has no PHP block making its class");
         }
-        $code = '?>' . substr_replace(substr($source, 0, $end + 2), 'return new class', $m[0][1], strlen($m[0][0]));
+        // The block alone, returning its object; a comment on its first line so the lines stay
+        // the file's.
+        $code = substr_replace(substr($source, 0, $end + 2), 'return new class', $m[0][1], strlen($m[0][0]));
+        $code = preg_replace('/<\?php/', "<?php /* $path, compiled by unscripted/ui-server */", $code, 1);
+
+        $compiled = "{$this->cache}/unscripted-$name-$hash.php";
+        if (!is_file($compiled)) {
+            is_dir($this->cache) || mkdir($this->cache, 0775, true);
+            foreach (glob("{$this->cache}/unscripted-$name-*.php") as $old) {
+                unlink($old);
+            }
+            $temporary = tempnam($this->cache, $name);
+            file_put_contents($temporary, $code);
+            rename($temporary, $compiled);
+        }
         try {
-            $component = eval($code);
+            $component = (static fn() => require $compiled)();
         } catch (ParseError $e) {
             throw new Error("{$e->getMessage()} in $path:{$e->getLine()}", 0, $e);
         }
         if (!$component instanceof Component) {
             throw new Error("$path: the PHP block's class must extend " . Component::class);
         }
-        return $this->classes[$name] = $component::class;
+        $loaded = [$component::class, $path, realpath($compiled)]; // as PHP names it in errors
+        $this->classes[$name] = [$hash, $loaded];
+        return $loaded;
     }
 }
 

@@ -22,6 +22,8 @@ final class UiServiceProvider extends ServiceProvider
     {
         $this->app->singleton(Components::class, fn() => new Components(
             config('unscripted.components', resource_path('components')),
+            // With the compiled views, so `view:clear` clears them and git ignores them.
+            config('view.compiled'),
         ));
     }
 
