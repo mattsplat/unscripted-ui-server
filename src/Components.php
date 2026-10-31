@@ -2,6 +2,7 @@
 
 namespace Unscripted\UiServer;
 
+use Closure;
 use Error;
 use ParseError;
 use PhpToken;
@@ -23,7 +24,12 @@ final class Components
 
     /** `$cache` holds each component's PHP block, compiled to a file of its own
      * (unscripted-<name>-<hash>.php, as Laravel compiles views), so opcache keeps it. */
-    public function __construct(private string $folder, private string $cache) {}
+    public function __construct(
+        private string $folder,
+        private string $cache,
+        /** Checks `#[Server(can: ...)]`: called with the ability and the call's arguments, throws if it's denied. */
+        private ?Closure $authorize = null,
+    ) {}
 
     /** The file as the browser gets it, or null if there's no component `$name`. */
     public function browserSource(string $name): ?string
@@ -159,8 +165,16 @@ final class Components
             throw new UnknownCall("$name has no server method $method");
         }
         $reflection = new ReflectionMethod($class, $method);
-        if (!$reflection->getAttributes(Server::class) || !$reflection->isPublic() || !$reflection->isStatic()) {
+        $server = $reflection->getAttributes(Server::class)[0] ?? null;
+        if ($server === null || !$reflection->isPublic() || !$reflection->isStatic()) {
             throw new UnknownCall("$name has no server method $method");
+        }
+        $can = $server->newInstance()->can;
+        if ($can !== null) {
+            if ($this->authorize === null) {
+                throw new Error("$name::$method has #[Server(can: '$can')], but nothing to check it with");
+            }
+            ($this->authorize)($can, array_values($args));
         }
         try {
             return $reflection->invokeArgs(null, array_values($args));

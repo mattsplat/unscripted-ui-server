@@ -12,7 +12,10 @@ use Attribute;
 final class State {}
 
 #[Attribute(Attribute::TARGET_METHOD)]
-final class Server {}
+final class Server
+{
+    public function __construct(public readonly ?string $can = null) {}
+}
 
 #[Attribute(Attribute::TARGET_METHOD)]
 final class Watch

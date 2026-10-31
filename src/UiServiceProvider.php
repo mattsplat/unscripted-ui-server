@@ -3,6 +3,7 @@
 namespace Unscripted\UiServer;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 
@@ -24,6 +25,7 @@ final class UiServiceProvider extends ServiceProvider
             config('unscripted.components', resource_path('components')),
             // With the compiled views, so `view:clear` clears them and git ignores them.
             config('view.compiled'),
+            fn(string $ability, array $args) => Gate::authorize($ability, $args),
         ));
     }
 

@@ -59,6 +59,12 @@ new class extends Component {
         return strlen($title) + count($tags);
     }
 
+    #[Server(can: 'shout')]
+    public static function shout(string $word): string
+    {
+        return strtoupper($word);
+    }
+
     #[Other('Server')]
     public function client(int $n): void { $this->query = "$n"; }
 };
@@ -124,6 +130,20 @@ check('no path in the message', (function () use ($components) {
         return str_contains($e->getMessage(), sys_get_temp_dir()) || str_contains($e->getMessage(), 'anonymous');
     }
 })(), false);
+fails('can, with nothing to check it', fn() => $components->call('todos', 'shout', ['hi']), Error::class, "has #[Server(can: 'shout')], but nothing");
+$asked = [];
+$guarded = new Components($folder, $cache, function (string $ability, array $args) use (&$asked) {
+    $asked[] = [$ability, $args];
+    if ($args[0] === 'no') {
+        throw new RuntimeException('denied');
+    }
+});
+check('can: allowed', $guarded->call('todos', 'shout', ['hi']), 'HI');
+fails('can: denied', fn() => $guarded->call('todos', 'shout', ['no']), RuntimeException::class, 'denied');
+check('can: asked with the arguments', $asked, [['shout', ['hi']], ['shout', ['no']]]);
+check('no can, not asked', [$guarded->call('todos', 'add', ['ab']), count($asked)], [2, 2]);
+check('the stub keeps can', str_contains(Components::strip($source, 'todos'), "#[Server(can: 'shout')] public static function shout(string \$word): \\Unscripted\\Ui\\ServerCall"), true);
+
 try {
     $components->call('todos', 'add', ['throw']);
 } catch (RuntimeException $e) {

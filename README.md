@@ -54,7 +54,9 @@ return [
 ## Security
 
 Every public `#[Server]` method is an HTTP endpoint anyone can call with any arguments: check
-authorisation and validate in the method. The rest of the file (client methods, `use` lines,
+authorisation and validate in the method. `#[Server(can: 'ability')]` checks a Gate ability
+before the method runs, with the call's arguments: a gate's first parameter is the user
+(`?User` to let guests through), the rest are the method's arguments. The rest of the file (client methods, `use` lines,
 the template) goes to the browser as written.
 
 ## Testing
