@@ -118,6 +118,29 @@ that made the change isn't sent the message over the socket, since its loaders r
 its calls anyway. If the socket drops, it reconnects after two seconds and reruns its live
 loaders, in case it missed something.
 
+### Sending data
+
+For what changes too often to refetch, such as players' positions in a game,
+`Live::send('game', $data)` sends the data itself. Every page's `#[Live('game')]` browser method
+(not a loader) is called with it, then renders:
+
+```php
+#[Server]
+public static function move(string $token, float $x, float $y): void
+{
+    // ...check the token...
+    Live::send('game', ['player' => [$id, $x, $y]]);
+}
+
+#[Live('game')]
+public function heard(array $message): void { /* show the player */ }
+```
+
+The channel is public, so send only what anyone may see. It needs the `reverb` transport (there's
+nothing to poll), and what's sent while a page's socket is down is lost: give the same key to a
+loader, and it runs again when the socket is back. The Laravel demo's `/voxel`
+uses it for a shared 3D block world.
+
 ## Errors
 
 The server loads a component's PHP block and template from compiled copies beside Laravel's compiled views

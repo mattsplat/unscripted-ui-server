@@ -178,7 +178,11 @@ final class ErrorBag
 
 /** On a #[Watch] loader: run it again whenever the server says `key` changed
  * (unscripted/ui-server's `Live::changed('key')`), on every page that has it. With ui-server's
- * 'reverb' transport the page hears about it on its socket; without, it asks every `poll` ms. */
+ * 'reverb' transport the page hears about it on its socket; without, it asks every `poll` ms.
+ *
+ * On a browser method: called with what the server sends (`Live::send('key', $data)`), then
+ * renders, as an action. Only over the socket ('reverb'); what's sent while it's down is lost,
+ * so pair it with a #[Live] loader, which runs again when the socket's back. */
 #[Attribute(Attribute::TARGET_METHOD)]
 final class Live
 {
@@ -686,16 +690,19 @@ abstract class Component
         }
     }
 
-    /** Each #[Live] loader listens for its key's changes on the page's socket, and runs again. */
+    /** Each #[Live] loader listens for its key's changes on the page's socket, and runs again;
+     * each #[Live] browser method, for what's sent with its key. */
     private function live(): void
     {
-        foreach ($this->loaders() as $name => [$method]) {
+        $loaders = $this->loaders();
+        foreach ($loaders as $name => [$method]) {
             $live = $method->getAttributes(Live::class)[0] ?? null;
             if ($live === null) {
                 continue;
             }
-            $reload = function () use ($name) {
-                if ($this->unmounted) {
+            // A change, or null: the socket's back after missing some. Not something sent.
+            $reload = function (?array $message = null) use ($name) {
+                if ($this->unmounted || array_key_exists('data', $message ?? [])) {
                     return;
                 }
                 unset($this->watched[$name]); // so load() runs it now, debounce or not
@@ -707,6 +714,25 @@ abstract class Component
             } else {
                 U::setInterval($reload, $live->poll); // no socket (the 'http' transport): ask
             }
+        }
+        foreach (new ReflectionObject($this)->getMethods() as $method) {
+            $live = $method->getAttributes(Live::class)[0] ?? null;
+            if ($live === null || isset($loaders[$method->name])) {
+                continue;
+            }
+            $key = $live->newInstance()->key;
+            if (Socket::$page === null) {
+                U::console()->warn("#[Live('$key')] on {$method->name}() needs ui-server's 'reverb' transport: nothing will arrive");
+                continue;
+            }
+            Socket::$page->listen("unscripted-live.$key", function (?array $message = null) use ($method) {
+                if ($this->unmounted || !array_key_exists('data', $message ?? [])) {
+                    return;
+                }
+                $this->computed = [];
+                $this->invoke($method, $method->getNumberOfParameters() > 0 ? [$message['data']] : []);
+                $this->refresh();
+            });
         }
     }
 
