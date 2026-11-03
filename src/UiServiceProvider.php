@@ -16,7 +16,7 @@ use Laravel\Reverb\Events\MessageReceived;
  * Its routes, in the `web` middleware group (sessions, auth, CSRF) unless
  * `unscripted.middleware` says otherwise:
  *
- *   GET  /unscripted/ui.php                        @unscripted/ui, the same version the server renders with
+ *   GET  /unscripted/ui.php                        @mtjncn/ui, the same version the server renders with
  *   GET  /unscripted/components/<name>.blade.php   the component, its #[Server] methods kept back
  *   POST /unscripted/call                          {"calls": [{"component", "method", "args"}]}
  *                                                  => {"results": [...]}, in order
@@ -59,7 +59,7 @@ final class UiServiceProvider extends ServiceProvider
             ]));
         });
 
-        // With no (...) it's text, such as "@unscripted/ui", and stays as written.
+        // With no (...) it's text, such as "@mtjncn/ui", and stays as written.
         Blade::directive('unscripted', fn(string $arguments) => $arguments === '' ? '@unscripted'
             : "<?php echo \\Unscripted\\UiServer\\UiServiceProvider::tag($arguments); ?>");
 

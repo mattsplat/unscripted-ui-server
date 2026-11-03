@@ -1,6 +1,6 @@
 <?php
 /*
- * @unscripted/ui: reactive components for Unscripted PHP. A component is a class: its #[State]
+ * @mtjncn/ui: reactive components for Unscripted PHP. A component is a class: its #[State]
  * properties are the data, its public methods are actions, and render() prints its HTML. After
  * every action (and every u-model change) it renders again, so the page always shows the state.
  *
@@ -824,7 +824,7 @@ abstract class Component
         $this->rendering();
         $html = $this->html();
 
-        // Patch the DOM where the host can (@unscripted/runtime's morph), so nodes that didn't
+        // Patch the DOM where the host can (@mtjncn/runtime's morph), so nodes that didn't
         // change are kept, focus and scroll with them. Elsewhere, replace it, then put back the
         // focus and caret of a bound input at least.
         self::$morph ??= U::window()->unscriptedMorph !== null;

@@ -447,7 +447,7 @@ final class Components
     }
 
     /**
-     * A new component `$name`, made by @unscripted/ui's blade() as in the browser, but from its
+     * A new component `$name`, made by @mtjncn/ui's blade() as in the browser, but from its
      * file as written (#[Server] methods and all), and with its PHP block and template compiled
      * to files (unscripted-<name>-<part>-<hash>.php in the cache, as Laravel compiles views) so
      * opcache keeps them. Returns it, its file, and the compiled files.

@@ -426,7 +426,7 @@ $lazy = $components->tag('search', '/s.blade.php', null, ['lazy' => true, 'place
 check('tag: lazy, a placeholder and no state', [str_starts_with($lazy, '<div id="unscripted-search"><p>Loading…</p></div>'), str_contains($lazy, 'data-state')], [true, false]);
 fails('tag: an id that isn\'t one', fn() => $components->tag('search', '/s', null, ['id' => '"><script>']), InvalidArgumentException::class);
 
-// ui-server's ui.php is a copy of @unscripted/ui's, so the server renders what the browser does.
+// ui-server's ui.php is a copy of @mtjncn/ui's, so the server renders what the browser does.
 $browser = __DIR__ . '/../../ui/ui.php';
 if (is_file($browser)) {
     check('src/ui.php is packages/ui/ui.php (npm run sync-ui)', md5_file(__DIR__ . '/../src/ui.php'), md5_file($browser));

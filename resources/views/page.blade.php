@@ -9,7 +9,7 @@
 <body>
   {{ $slot }}
   <script type="text/php" src="{{ url('unscripted/ui.php') }}"></script>
-  <script src="{{ config('unscripted.runtime', 'https://cdn.jsdelivr.net/npm/@unscripted/runtime/auto.js') }}"
-          data-php="{{ config('unscripted.pack', 'https://cdn.jsdelivr.net/npm/@unscripted/php84/php_pack.wasm') }}"></script>
+  <script src="{{ config('unscripted.runtime', 'https://cdn.jsdelivr.net/npm/@mtjncn/runtime@0.1/auto.js') }}"
+          data-php="{{ config('unscripted.pack', 'https://cdn.jsdelivr.net/npm/@mtjncn/php84@0.1/php_pack.wasm') }}"></script>
 </body>
 </html>

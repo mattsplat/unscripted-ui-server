@@ -1,6 +1,6 @@
 {
     "name": "unscripted/ui-server",
-    "description": "The server side of @unscripted/ui: serves components with their #[Server] methods kept on the server, and calls those methods for the browser. Laravel.",
+    "description": "The server side of @mtjncn/ui: serves components with their #[Server] methods kept on the server, and calls those methods for the browser. Laravel.",
     "license": ["MIT", "Apache-2.0"],
     "type": "library",
     "require": {
