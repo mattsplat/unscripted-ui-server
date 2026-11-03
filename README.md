@@ -3,9 +3,16 @@
 The server side of [`@unscripted/ui`](../ui), for Laravel 12 and 13: a component's `#[Server]`
 methods run on the server, and the browser calls them. PHP 8.4.
 
+It isn't on Packagist: install it from its Git repo (private, so with an SSH key that can read it).
+
 ```sh
-composer require unscripted/ui-server
+composer config repositories.unscripted vcs git@github.com:mattsplat/unscripted-ui-server.git
+composer require unscripted/ui-server:dev-main
 ```
+
+Its code lives in [unscripted-js](https://github.com/mattsplat/unscripted-js), at
+`packages/ui-server`: change it there, then `npm run split-ui-server` copies it, history and all,
+to `mattsplat/unscripted-ui-server`.
 
 Put components in `resources/components/<name>.blade.php`. The package adds three routes, in the
 `web` middleware group (sessions, auth, CSRF):
