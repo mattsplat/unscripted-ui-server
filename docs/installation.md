@@ -85,6 +85,30 @@ Components reach the browser through the package's `/unscripted/components/...` 
 Laravel serves them. Don't put them in `public/`: a web server set up for PHP would run them
 instead of sending them.
 
+## PhpStorm
+
+PhpStorm (and the other JetBrains IDEs) can learn the `u-*` attributes, with completion, their
+docs on hover, and no "attribute is not allowed here" warnings. Add one line to your
+`package.json`:
+
+```json
+"web-types": "./vendor/unscripted/ui-server/resources/ide/web-types.json"
+```
+
+It points into `vendor/`, so it stays current as you update the package. If `package.json`
+already has a `web-types` entry, make it a list of both paths.
+
+Some warnings it can't fix yet, because PhpStorm doesn't know the component runs in the
+browser:
+
+- `'void' method ... result used` on `yield static::save(...)`. In the browser that call
+  returns the pending server call, which is what `yield` waits for.
+- `Undefined class 'U'`: `Unscripted`, the browser's own class, exists only in the browser.
+- "Property accessed via magic method" on a `#[Computed]` read as `$this->name`.
+
+A misspelt `u-on` modifier isn't flagged in the editor either; the browser throws an error
+naming it when the event fires.
+
 ## Next
 
 Try the [quickstart](quickstart.md), or read [how it differs from Livewire](coming-from-livewire.md).

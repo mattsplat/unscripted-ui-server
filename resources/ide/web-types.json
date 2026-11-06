@@ -1,0 +1,150 @@
+{
+  "$schema": "https://raw.githubusercontent.com/JetBrains/web-types/master/schema/web-types.json",
+  "name": "unscripted",
+  "version": "0.1.0",
+  "description-markup": "markdown",
+  "contributions": {
+    "html": {
+      "attributes": [
+        {
+          "name": "u-on",
+          "description": "Calls an action on a DOM event: `u-on:click=\"save\"`, or with arguments as JSON literals, `u-on:click='move(1, \"left\")'` (strings in double quotes, so single-quote the attribute).",
+          "doc-url": "https://unscripted.splat.codes/docs/actions",
+          "value": {"kind": "plain", "type": "string", "required": true},
+          "pattern": {
+            "template": [
+              "u-on:",
+              {"items": "/js/events", "template": ["#item:event name"]},
+              {"items": "/html/modifiers", "template": [".", "#item:modifier"], "required": false, "repeat": true}
+            ]
+          },
+          "js": {
+            "events": [
+              {"name": "Custom event", "pattern": "[^.]+", "priority": "lowest", "hide-from-completion": true, "doc-hide-pattern": true}
+            ]
+          },
+          "html": {
+            "modifiers": [
+              {"name": "prevent", "description": "Calls `event.preventDefault()`. Use it on `submit`."},
+              {"name": "stop", "description": "Calls `event.stopPropagation()`."},
+              {"name": "self", "description": "Only when the event's target is this element, not a child."},
+              {"name": "once", "description": "At most once."},
+              {"name": "window", "description": "Listens on `window`, so it fires wherever the event happens: `u-on:keydown.window.escape`."},
+              {"name": "outside", "description": "Only for events outside this element: `u-on:click.outside=\"close\"`."},
+              {"name": "ctrl", "description": "Only while Ctrl is held."},
+              {"name": "shift", "description": "Only while Shift is held."},
+              {"name": "alt", "description": "Only while Alt is held."},
+              {"name": "meta", "description": "Only while Meta (Cmd) is held."},
+              {"name": "enter", "description": "Only for the Enter key."},
+              {"name": "escape", "description": "Only for the Escape key."},
+              {"name": "esc", "description": "Only for the Escape key."},
+              {"name": "space", "description": "Only for the space bar."},
+              {"name": "tab", "description": "Only for the Tab key."},
+              {"name": "up", "description": "Only for the up arrow."},
+              {"name": "down", "description": "Only for the down arrow."},
+              {"name": "left", "description": "Only for the left arrow."},
+              {"name": "right", "description": "Only for the right arrow."},
+              {"name": "delete", "description": "Only for the Delete key."},
+              {"name": "backspace", "description": "Only for the Backspace key."},
+              {"name": "home", "description": "Only for the Home key."},
+              {"name": "end", "description": "Only for the End key."},
+              {"name": "Key", "description": "Only for that one character's key: `u-on:keydown.ctrl.k`.", "pattern": "[a-z0-9]"}
+            ]
+          }
+        },
+        {
+          "name": "u-model",
+          "description": "Binds an input to a `#[State]` property, both ways, as it changes. A path binds into an array: `form.email`, `todos.3.done`. On `<input type=\"file\">` it uploads the file as soon as it's chosen.",
+          "doc-url": "https://unscripted.splat.codes/docs/forms",
+          "value": {"kind": "plain", "type": "string", "required": true},
+          "pattern": {
+            "template": [
+              "u-model",
+              {"items": "/html/modifiers", "template": [".", "#item:modifier"], "required": false, "repeat": true}
+            ]
+          },
+          "html": {
+            "modifiers": [
+              {"name": "blur", "description": "Writes when the field loses focus."},
+              {"name": "debounce", "description": "Writes after a pause in typing: 250 ms, or `.debounce.300ms`."},
+              {"name": "Duration", "description": "How long, for `.debounce`: `300ms`, `1s`.", "pattern": "[0-9]+(ms|s)?"},
+              {"name": "number", "description": "Writes a number."},
+              {"name": "boolean", "description": "Writes a bool."}
+            ]
+          }
+        },
+        {
+          "name": "u-loading",
+          "description": "Shown only while the named action or loader waits on the server: `u-loading=\"save\"`. With no value, while anything does.",
+          "doc-url": "https://unscripted.splat.codes/docs/loading-states",
+          "value": {"kind": "plain", "type": "string", "required": false}
+        },
+        {
+          "name": "u-loading.remove",
+          "description": "Hidden while the named action or loader waits on the server, and shown otherwise.",
+          "doc-url": "https://unscripted.splat.codes/docs/loading-states",
+          "value": {"kind": "plain", "type": "string", "required": false}
+        },
+        {
+          "name": "u-poll",
+          "description": "Calls the action on a timer while the element is on the page: `u-poll.5s=\"refresh\"`, every 2 s by default.",
+          "doc-url": "https://unscripted.splat.codes/docs/polling",
+          "value": {"kind": "plain", "type": "string", "required": true},
+          "pattern": {
+            "template": [
+              "u-poll",
+              {"items": "/html/modifiers", "template": [".", "#item:interval"], "required": false}
+            ]
+          },
+          "html": {
+            "modifiers": [
+              {"name": "Interval", "description": "How often: `5s`, `750ms`.", "pattern": "[0-9]+(ms|s)?"}
+            ]
+          }
+        },
+        {
+          "name": "u-init",
+          "description": "Calls the action once, when the element first appears.",
+          "doc-url": "https://unscripted.splat.codes/docs/polling",
+          "value": {"kind": "plain", "type": "string", "required": true}
+        },
+        {
+          "name": "u-key",
+          "description": "Which item this element is, so re-renders keep it as a list changes: `u-key=\"{{ $todo['id'] }}\"`.",
+          "doc-url": "https://unscripted.splat.codes/docs/how-it-works",
+          "value": {"kind": "plain", "type": "string", "required": true}
+        },
+        {
+          "name": "u-offline",
+          "description": "Shown only while the browser is offline.",
+          "doc-url": "https://unscripted.splat.codes/docs/loading-states",
+          "value": {"kind": "no-value"}
+        },
+        {
+          "name": "u-confirm",
+          "description": "With a `u-on` on the same element: asks this first, and does nothing if the answer is no.",
+          "doc-url": "https://unscripted.splat.codes/docs/actions",
+          "value": {"kind": "plain", "type": "string", "required": true}
+        },
+        {
+          "name": "u-ignore",
+          "description": "Re-renders leave this element alone, its children and its attributes. For an element other code draws in.",
+          "doc-url": "https://unscripted.splat.codes/docs/events",
+          "value": {"kind": "no-value"}
+        },
+        {
+          "name": "u-navigate",
+          "description": "On a link: goes to the page without loading PHP again.",
+          "doc-url": "https://unscripted.splat.codes/docs/navigation",
+          "value": {"kind": "no-value"}
+        },
+        {
+          "name": "u-persist",
+          "description": "Kept exactly as it is across `u-navigate` page changes, where the next page has the same id: `u-persist=\"player\"`.",
+          "doc-url": "https://unscripted.splat.codes/docs/navigation",
+          "value": {"kind": "plain", "type": "string", "required": true}
+        }
+      ]
+    }
+  }
+}
