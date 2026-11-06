@@ -80,6 +80,31 @@ server (a database, a mail, a secret), you write a `#[Server]` method, and the b
 | Echo listeners, `#[On('echo:...')]` | `#[Live('key')]`, with `Live::changed('key')` or `Live::send('key', $data)` on the server |
 | `Livewire::test(Counter::class)` | `app(Components::class)->test('counter')` |
 
+## Converting a component
+
+`unscripted:convert` writes an Unscripted component from a Livewire one, its class and its
+view. The Livewire component is left as it was, so you can run both while you check it.
+
+```sh
+php artisan unscripted:convert counter                 # App\Livewire\Counter
+php artisan unscripted:convert admin.users-table       # App\Livewire\Admin\UsersTable
+php artisan unscripted:convert counter --dry-run       # print it instead
+```
+
+It converts what maps one to one: the `wire:` attributes in the table above, `<livewire:...>`
+tags, `#[Computed]`, `#[Url]`, `#[On]`, `mount()`, the data `render()` gives the view, and
+`#[Validate]` properties, which become a `#[Server]` method with validated parameters that the
+action calls after `$this->validate()`.
+
+What it can't decide for you, it marks. Code that only exists on the server (models, facades,
+`auth()` and Laravel's other helpers) is commented out where it stood, with a
+`TODO(unscripted)` saying where it goes, usually into that `#[Server]` method or a loader. Each
+one is also listed when the command finishes. Moving that code is the part to do carefully:
+a server method gets only its arguments, so check them as you would a form.
+
+Components whose view is inline or in the same file (Volt, Livewire 4's single-file
+components) aren't supported yet.
+
 ## Things to unlearn
 
 - **Don't pass models into the browser.** State has to be JSON. Return

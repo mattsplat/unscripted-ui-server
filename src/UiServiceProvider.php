@@ -46,6 +46,10 @@ final class UiServiceProvider extends ServiceProvider
     {
         $this->loadViewsFrom(__DIR__ . '/../resources/views', 'unscripted');
 
+        if ($this->app->runningInConsole()) {
+            $this->commands([ConvertCommand::class]);
+        }
+
         // A whole page for a component: Route::unscripted('/todos', 'todos', ['title' => 'Todos']).
         // `layout` names your own view instead, which gets the component as $slot (and $title)
         // and must load ui.php and the runtime itself; other options go to @unscripted.

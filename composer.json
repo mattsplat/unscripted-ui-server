@@ -19,6 +19,6 @@
         "laravel": { "providers": ["Unscripted\\UiServer\\UiServiceProvider"] }
     },
     "scripts": {
-        "test": "php tests/components.php"
+        "test": "php tests/components.php && php tests/convert.php"
     }
 }
