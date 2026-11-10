@@ -32,7 +32,9 @@ server (a database, a mail, a secret), you write a `#[Server]` method, and the b
   *without* it as locked against forms, not against users.
 - **Templates run in both places**, the browser and (for the first load) the server, so they
   can use only what both have: no `route()`, `auth()`, `config()` or other Laravel helpers.
-  Get those values from a loader, or pass them in.
+  Share those values with the page instead (`$shared`, see
+  [configuration](configuration.md#sharing-data-with-every-component)), or get them from a
+  loader. A render says so if you reach for one, as Inertia's page props would.
 - **Actions can't touch the database.** Eloquent isn't in the browser. Put queries in
   `#[Server]` methods and call them.
 - **Waiting is `yield`.** An action calls a server method and waits with
@@ -78,6 +80,7 @@ server (a database, a mail, a secret), you write a `#[Server]` method, and the b
 | Nested `<livewire:item :item="$item" :key="$item->id" />` | `@child('item', ['item' => $item], $item['id'])` |
 | `#[Reactive]` props | Props are always reactive: the child's property updates when the parent's value changes |
 | Echo listeners, `#[On('echo:...')]` | `#[Live('key')]`, with `Live::changed('key')` or `Live::send('key', $data)` on the server |
+| `auth()` in a view | `$shared['auth']`, from the `share` [config](configuration.md#sharing-data-with-every-component) |
 | `Livewire::test(Counter::class)` | `app(Components::class)->test('counter')` |
 
 ## Converting a component

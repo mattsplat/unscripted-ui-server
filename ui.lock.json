@@ -1,6 +1,6 @@
 {
     "package": "@mtjncn/ui",
     "version": "0.1.0",
-    "sha256": "55b4d09a3953befe64ebdb9e5e88e95acbf943a70a4779f88c4685a7af9d0267",
-    "ahead": "the Navigator fragment fix, not released yet: repin once @mtjncn/ui 0.1.1 is published"
+    "sha256": "912b007aa2f392321d784f4bc456510bfff6c89b6032296e17b26b254c7e490d",
+    "ahead": "synced from a local checkout, not a release: repin once it's published"
 }

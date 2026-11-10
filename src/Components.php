@@ -502,7 +502,8 @@ final class Components
      * `$options`: `id`, the root's (`unscripted-<name>` by default, so give one to put a
      * component on a page twice); `lazy`, to skip the server render and show `placeholder`
      * until the browser has it (its loaders run there); `query`, the request's, for #[Url]
-     * properties; `endpoint`, where calls go over HTTP.
+     * properties; `endpoint`, where calls go over HTTP; `shared`, the page's `$shared` data,
+     * which the render here and the browser both see.
      */
     public function tag(string $name, string $src, ?array $socket = null, array $options = []): string
     {
@@ -511,14 +512,23 @@ final class Components
             throw new \InvalidArgumentException("@unscripted: the id '$id' isn't one an element can have");
         }
         $attribute = fn(string $value) => htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML5, 'UTF-8');
-        if ($options['lazy'] ?? false) {
-            $html = $options['placeholder'] ?? '';
-            $state = null;
-        } else {
-            ['html' => $html, 'state' => $state] = $this->render($name, $options['query'] ?? []);
+        // The same data renders here and goes to the browser, so the two agree.
+        $shared = $options['shared'] ?? [];
+        $previous = Component::$shared;
+        Component::$shared = $shared;
+        try {
+            if ($options['lazy'] ?? false) {
+                $html = $options['placeholder'] ?? '';
+                $state = null;
+            } else {
+                ['html' => $html, 'state' => $state] = $this->render($name, $options['query'] ?? []);
+            }
+        } finally {
+            Component::$shared = $previous;
         }
         return "<div id=\"$id\">$html</div>\n"
             . '<script type="text/blade" src="' . $attribute($src) . "\" data-mount=\"#$id\""
+            . ($shared === [] ? '' : ' data-shared="' . $attribute(json_encode($shared, JSON_THROW_ON_ERROR)) . '"')
             . ($state === null ? '' : ' data-state="' . $attribute(json_encode($state, JSON_THROW_ON_ERROR)) . '"')
             . ($socket === null ? '' : ' data-socket="' . $attribute(json_encode($socket, JSON_THROW_ON_ERROR)) . '"')
             . (isset($options['endpoint']) ? ' data-endpoint="' . $attribute($options['endpoint']) . '"' : '')

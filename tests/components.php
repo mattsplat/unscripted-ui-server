@@ -426,6 +426,29 @@ $lazy = $components->tag('search', '/s.blade.php', null, ['lazy' => true, 'place
 check('tag: lazy, a placeholder and no state', [str_starts_with($lazy, '<div id="unscripted-search"><p>Loading…</p></div>'), str_contains($lazy, 'data-state')], [true, false]);
 fails('tag: an id that isn\'t one', fn() => $components->tag('search', '/s', null, ['id' => '"><script>']), InvalidArgumentException::class);
 
+// $shared: the page's data, rendered here and sent to the browser as one and the same.
+file_put_contents("$folder/greeting.blade.php", <<<'BLADE'
+<?php
+use Unscripted\Ui\Component;
+new class extends Component {};
+?>
+<p>@if ($shared['auth']['id'] !== null) Hi {{ $shared['auth']['name'] }} @else Sign in @endif</p>
+BLADE);
+
+$shared = ['auth' => ['id' => 7, 'name' => 'Ada']];
+$greeting = $components->tag('greeting', '/g.blade.php', null, ['shared' => $shared]);
+check('shared: the server renders with it', str_contains($greeting, 'Hi Ada'), true);
+check('shared: and sends the same to the browser',
+    str_contains($greeting, 'data-shared="' . htmlspecialchars(json_encode($shared), ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML5, 'UTF-8') . '"'), true);
+check('shared: a guest renders the other way',
+    str_contains($components->tag('greeting', '/g', null, ['shared' => ['auth' => ['id' => null, 'name' => null]]]), 'Sign in'), true);
+file_put_contents("$folder/plain.blade.php", "<?php\nuse Unscripted\\Ui\\Component;\nnew class extends Component {};\n?>\n<p>nothing shared</p>\n");
+check('shared: no data-shared when nothing is shared',
+    str_contains($components->tag('plain', '/p'), 'data-shared'), false);
+check('shared: it doesn\'t leak past the tag', Unscripted\Ui\Component::$shared, []);
+check('shared: it is escaped into the attribute',
+    str_contains($components->tag('greeting', '/g', null, ['shared' => ['auth' => ['id' => 1, 'name' => '"><script>']]]), '"><script>'), false);
+
 // serverOnly: Laravel in browser code, which is everything but a #[Server] method's body.
 $scan = fn(string $source) => Components::serverOnly($source);
 
