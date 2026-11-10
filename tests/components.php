@@ -426,11 +426,122 @@ $lazy = $components->tag('search', '/s.blade.php', null, ['lazy' => true, 'place
 check('tag: lazy, a placeholder and no state', [str_starts_with($lazy, '<div id="unscripted-search"><p>Loading…</p></div>'), str_contains($lazy, 'data-state')], [true, false]);
 fails('tag: an id that isn\'t one', fn() => $components->tag('search', '/s', null, ['id' => '"><script>']), InvalidArgumentException::class);
 
-// ui-server's ui.php is a copy of @mtjncn/ui's, so the server renders what the browser does.
-$browser = __DIR__ . '/../../ui/ui.php';
-if (is_file($browser)) {
-    check('src/ui.php is packages/ui/ui.php (npm run sync-ui)', md5_file(__DIR__ . '/../src/ui.php'), md5_file($browser));
-}
+// $shared: the page's data, rendered here and sent to the browser as one and the same.
+file_put_contents("$folder/greeting.blade.php", <<<'BLADE'
+<?php
+use Unscripted\Ui\Component;
+new class extends Component {};
+?>
+<p>@if ($shared['auth']['id'] !== null) Hi {{ $shared['auth']['name'] }} @else Sign in @endif</p>
+BLADE);
+
+$shared = ['auth' => ['id' => 7, 'name' => 'Ada']];
+$greeting = $components->tag('greeting', '/g.blade.php', null, ['shared' => $shared]);
+check('shared: the server renders with it', str_contains($greeting, 'Hi Ada'), true);
+check('shared: and sends the same to the browser',
+    str_contains($greeting, 'data-shared="' . htmlspecialchars(json_encode($shared), ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML5, 'UTF-8') . '"'), true);
+check('shared: a guest renders the other way',
+    str_contains($components->tag('greeting', '/g', null, ['shared' => ['auth' => ['id' => null, 'name' => null]]]), 'Sign in'), true);
+file_put_contents("$folder/plain.blade.php", "<?php\nuse Unscripted\\Ui\\Component;\nnew class extends Component {};\n?>\n<p>nothing shared</p>\n");
+check('shared: no data-shared when nothing is shared',
+    str_contains($components->tag('plain', '/p'), 'data-shared'), false);
+check('shared: it doesn\'t leak past the tag', Unscripted\Ui\Component::$shared, []);
+check('shared: it is escaped into the attribute',
+    str_contains($components->tag('greeting', '/g', null, ['shared' => ['auth' => ['id' => 1, 'name' => '"><script>']]]), '"><script>'), false);
+
+// serverOnly: Laravel in browser code, which is everything but a #[Server] method's body.
+$scan = fn(string $source) => Components::serverOnly($source);
+
+check('serverOnly: a helper in the template', $scan(<<<'BLADE'
+<?php
+use Unscripted\Ui\Component;
+new class extends Component {};
+?>
+<p>{{ auth()->user()->name }}</p>
+BLADE), ['auth() on line 5']);
+
+check('serverOnly: a helper in an action', $scan(<<<'BLADE'
+<?php
+use Unscripted\Ui\Component;
+new class extends Component {
+    public function save(): void { $id = auth()->id(); }
+};
+?>
+BLADE), ['auth() on line 4']);
+
+check('serverOnly: a #[Server] method may use it', $scan(<<<'BLADE'
+<?php
+use Unscripted\Ui\{Component, Server};
+new class extends Component {
+    #[Server]
+    public static function save(): void { $id = auth()->id(); }
+};
+?>
+BLADE), []);
+
+check('serverOnly: the app\'s own classes', $scan(<<<'BLADE'
+<?php
+use App\Models\Todo;
+use Unscripted\Ui\Component;
+new class extends Component {
+    public function save(): void { Todo::create([]); }
+};
+?>
+BLADE), ['Todo:: (App\Models\Todo) on line 5']);
+
+check('serverOnly: a facade, from its import', $scan(<<<'BLADE'
+<?php
+use Illuminate\Support\Facades\Gate;
+use Unscripted\Ui\Component;
+new class extends Component {};
+?>
+<p>@if (Gate::allows('x')) yes @endif</p>
+BLADE), ['Gate:: (Illuminate\Support\Facades\Gate) on line 6']);
+
+check('serverOnly: a method of the component isn\'t a helper', $scan(<<<'BLADE'
+<?php
+use Unscripted\Ui\Component;
+new class extends Component {
+    public function go(): void { $this->config(); $this->auth(); }
+    public function config(): void {}
+    public function auth(): void {}
+};
+?>
+BLADE), []);
+
+check('serverOnly: an import that isn\'t Laravel\'s', $scan(<<<'BLADE'
+<?php
+use Unscripted\Ui\{Component, State};
+new class extends Component {
+    #[State] public string $q = '';
+    public function go(): void { $d = new DateTimeImmutable(); }
+};
+?>
+<p>{{ $q }}</p>
+BLADE), []);
+
+check('serverOnly: everything it finds, in order', $scan(<<<'BLADE'
+<?php
+use Unscripted\Ui\{Component, Server};
+new class extends Component {
+    protected function mounted(): void { $x = session('k'); }
+    #[Server]
+    public static function ok(): void { $y = config('app.name'); }
+};
+?>
+<p>{{ route('home') }}</p>
+BLADE), ['session() on line 4', 'route() on line 9']);
+
+$checking = new Components($folder, $cache, null, null, true);
+file_put_contents("$folder/leaky.blade.php", <<<'BLADE'
+<?php
+use Unscripted\Ui\Component;
+new class extends Component {};
+?>
+<p>{{ auth()->id() }}</p>
+BLADE);
+fails('serverOnly: the render stops, saying where', fn() => $checking->render('leaky'), Error::class, 'auth() on line 5');
+fails('serverOnly: ...and says what to do', fn() => $checking->render('leaky'), Error::class, 'unscripted.share');
 
 array_map('unlink', [...glob("$cache/*"), ...glob("$folder/*.blade.php")]);
 rmdir($cache);

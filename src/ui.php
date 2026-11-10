@@ -374,6 +374,16 @@ abstract class Component
      * `fn(string $name, array $props): array{html, state}`. */
     public static ?Closure $prerenderChild = null;
 
+    /**
+     * What the page shares with every component on it, as `$shared` in a template: set from an
+     * @unscripted script's data-shared (unscripted/ui-server's `share` config), and on the
+     * server before it renders, so both render the same thing.
+     *
+     * Plain data, like state: the user can change any of it, so a #[Server] method must never
+     * trust it coming back. It's what the page may see, not what the server believes.
+     */
+    public static array $shared = [];
+
     /** Where server calls are posted (over HTTP): set from an @unscripted script's data-endpoint. */
     public static string $endpoint = '/unscripted/call';
     /** Off the page (unscripted/ui-server's tests): makes the server calls instead of the
@@ -396,6 +406,7 @@ abstract class Component
             }
         }
         $data['errors'] ??= $this->errors();
+        $data['shared'] ??= self::$shared;
         ($this->view)($data);
     }
 
@@ -2159,6 +2170,11 @@ function mountPage(array $skip = []): void
         // Rendered on the server already (unscripted/ui-server's @unscripted): its state, and
         // the socket its calls go over, if they do.
         Component::$endpoint = $script->getAttribute('data-endpoint') ?? Component::$endpoint;
+        // The page's, so the first script tag that carries it sets it for every component.
+        $shared = $script->getAttribute('data-shared');
+        if ($shared !== null) {
+            Component::$shared = json_decode($shared, true, 512, JSON_THROW_ON_ERROR);
+        }
         $socket = $script->getAttribute('data-socket');
         if ($socket !== null) {
             Socket::$page ??= new Socket(json_decode($socket, true, 512, JSON_THROW_ON_ERROR));

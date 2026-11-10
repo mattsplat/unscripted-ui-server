@@ -39,6 +39,7 @@ final class UiServiceProvider extends ServiceProvider
             config('view.compiled'),
             fn(string $ability, array $args) => Gate::authorize($ability, $args),
             fn(array $data, array $rules, array $attributes = []) => validator($data, $rules, [], $attributes)->validate(),
+            config('unscripted.check', config('app.debug', false)),
         ));
     }
 
@@ -150,12 +151,33 @@ final class UiServiceProvider extends ServiceProvider
         ];
     }
 
+    /**
+     * What every component on the page is given as `$shared`: `unscripted.share`, an array of
+     * values, each a closure run now if it is one. The default says only whether someone is
+     * signed in and which id they are, which a template can act on without being told anything
+     * about them; override `share` with what your pages need:
+     *
+     *   'share' => [
+     *       'auth' => fn() => ['id' => auth()->id(), 'name' => auth()->user()?->name],
+     *       'app' => fn() => ['name' => config('app.name')],
+     *   ],
+     *
+     * It's rendered into the page, so share only what the user may see, and don't trust it
+     * coming back: a #[Server] method takes its arguments and checks them, as it would a form.
+     */
+    public static function shared(): array
+    {
+        $share = config('unscripted.share', ['auth' => fn() => ['id' => auth()->id()]]);
+        return array_map(fn($value) => $value instanceof \Closure ? $value() : $value, $share);
+    }
+
     /** @unscripted('name', [options]): see Components::tag() for the options. */
     public static function tag(string $name, array $options = []): string
     {
         return app(Components::class)->tag($name, url("unscripted/components/$name.blade.php"), self::socket(), [
             'query' => request()->query(),
             'endpoint' => url('unscripted/call'),
+            'shared' => self::shared(),
             ...$options,
         ]);
     }
