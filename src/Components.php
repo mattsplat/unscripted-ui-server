@@ -9,6 +9,7 @@ use ReflectionMethod;
 use ReflectionProperty;
 use RuntimeException;
 use Throwable;
+use Unscripted\Ui\Blade;
 use Unscripted\Ui\Component;
 use Unscripted\Ui\Server;
 use Unscripted\Ui\Validate;
@@ -34,6 +35,9 @@ final class Components
         /** Checks `#[Validate]` parameters: called with their arguments and rules, by parameter
          * name, throws if they fail (Laravel's ValidationException, a 422). */
         private ?Closure $validate = null,
+        /** Whether to stop on code that only runs on the server (see serverOnly()). On while
+         * developing: in production the browser's error is what's left. */
+        private bool $check = false,
     ) {}
 
     /** The file as the browser gets it, or null if there's no component `$name`. */
@@ -234,6 +238,103 @@ final class Components
             'public' => $public,
             'end' => $i,
         ];
+    }
+
+    /** Laravel's helpers, which the browser's PHP doesn't have. */
+    private const array HELPERS = [
+        'auth', 'route', 'config', 'session', 'old', 'request', 'response', 'redirect', 'back',
+        'url', 'secure_url', 'asset', 'action', 'view', 'abort', 'abort_if', 'abort_unless',
+        'app', 'resolve', 'event', 'dispatch', 'cache', 'cookie', 'logger', 'report', 'info',
+        'trans', 'trans_choice', '__', 'now', 'today', 'collect', 'validator', 'bcrypt',
+        'encrypt', 'decrypt', 'csrf_token', 'csrf_field', 'method_field', 'policy',
+        'base_path', 'public_path', 'resource_path', 'storage_path', 'config_path',
+        'database_path', 'mix', 'vite', 'to_route', 'broadcast',
+    ];
+
+    /**
+     * Everything outside a #[Server] method runs in the browser: the template, actions,
+     * mounted(), #[Computed], the lifecycle hooks. Laravel isn't there, so each use of one of
+     * its helpers, or of a class from `App\` or `Illuminate\`, as `["auth() on line 12", ...]`.
+     *
+     * Worth saying at the first render, because the server runs some of that code too, where
+     * Laravel does exist: a page renders, then the component dies the moment it mounts.
+     * mounted() and actions the server never runs at all, so nothing here would catch them.
+     */
+    public static function serverOnly(string $source): array
+    {
+        $end = str_starts_with(ltrim($source), '<?php') ? strpos($source, '?>') : false;
+        $block = $end === false ? '' : substr($source, 0, $end + 2);
+        $template = substr($source, strlen($block));
+
+        // `use App\Models\Todo;` and `use Unscripted\Ui\{Component, State};`, as name => class.
+        $imports = [];
+        preg_match_all('/^\s*use\s+([\w\\\\]+)(?:\\\\\{([^}]*)\}|\s+as\s+(\w+))?\s*;/mi', $block, $uses, PREG_SET_ORDER);
+        foreach ($uses as $use) {
+            foreach (($use[2] ?? '') === '' ? [''] : explode(',', $use[2]) as $part) {
+                $part = trim($part);
+                $class = $part === '' ? $use[1] : "{$use[1]}\\$part";
+                $imports[$use[3] ?? substr($class, strrpos($class, '\\') + 1)] = $class;
+            }
+        }
+
+        // Blade's {{ }} and @if are only PHP once compiled, so the template is scanned compiled.
+        // Its lines follow the block's, as they do in the file.
+        return [
+            ...self::uses(PhpToken::tokenize($block), $imports, 0, true),
+            ...self::uses(PhpToken::tokenize('<?php ?>' . Blade::compile($template)), $imports, substr_count($block, "\n"), false),
+        ];
+    }
+
+    /** serverOnly()'s scan of one part: #[Server] methods skipped when `$skipServer`. */
+    private static function uses(array $tokens, array $imports, int $offset, bool $skipServer): array
+    {
+        $found = [];
+        $previous = null;
+        for ($i = 0, $n = count($tokens); $i < $n; $i++) {
+            if ($skipServer && $tokens[$i]->is(T_ATTRIBUTE)) {
+                $method = self::method($tokens, $i);
+                if ($method !== null && $method['server']) {
+                    $i = $method['end'];
+                    $previous = null;
+                    continue;
+                }
+            }
+            $token = $tokens[$i];
+            if ($token->isIgnorable()) {
+                continue;
+            }
+            if ($token->is(T_STRING)) {
+                // Not $this->auth(), Thing::auth(), function auth() or new auth().
+                $called = $previous === null || !in_array($previous, ['->', '?->', '::', 'function', 'new'], true);
+                $next = self::after($tokens, $i);
+                if ($called && $next === '(' && in_array(strtolower($token->text), self::HELPERS, true)) {
+                    $found[] = "{$token->text}() on line " . ($token->line + $offset);
+                } elseif ($called && $next === '::' && self::isServerClass($imports[$token->text] ?? null)) {
+                    $found[] = "{$token->text}:: (" . $imports[$token->text] . ') on line ' . ($token->line + $offset);
+                }
+            }
+            $previous = $token->is([T_OBJECT_OPERATOR, T_NULLSAFE_OBJECT_OPERATOR, T_DOUBLE_COLON, T_FUNCTION, T_NEW])
+                ? trim(strtolower($token->text))
+                : $token->text;
+        }
+        return $found;
+    }
+
+    /** A class the browser has no autoloader for: the app's own, or Laravel's. */
+    private static function isServerClass(?string $class): bool
+    {
+        return $class !== null && (str_starts_with($class, 'App\\') || str_starts_with($class, 'Illuminate\\'));
+    }
+
+    /** The next token's text after `$i`, ignoring whitespace and comments. */
+    private static function after(array $tokens, int $i): ?string
+    {
+        for ($j = $i + 1, $n = count($tokens); $j < $n; $j++) {
+            if (!$tokens[$j]->isIgnorable()) {
+                return $tokens[$j]->text;
+            }
+        }
+        return null;
     }
 
     /** Makes a request's calls, `[{"component", "method", "args"}, ...]`, in order: their
@@ -456,6 +557,11 @@ final class Components
     {
         $path = $this->path($name) ?? throw new UnknownCall("there's no component $name");
         $source = $this->source($name);
+        if ($this->check && ($serverOnly = self::serverOnly($source)) !== []) {
+            throw new Error("$name.blade.php: " . implode(', ', $serverOnly)
+                . ". Outside a #[Server] method the component runs in the browser, which has no Laravel:"
+                . ' move it into a #[Server] method, or share it with the page (unscripted.share).');
+        }
         $hash = md5($source); // of the partials too: changing one compiles again
         $compiled = [];
         $component = blade($source, $path, function (string $code, string $part) use ($name, $hash, $path, &$compiled) {

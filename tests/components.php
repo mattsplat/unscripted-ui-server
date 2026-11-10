@@ -426,6 +426,100 @@ $lazy = $components->tag('search', '/s.blade.php', null, ['lazy' => true, 'place
 check('tag: lazy, a placeholder and no state', [str_starts_with($lazy, '<div id="unscripted-search"><p>Loading…</p></div>'), str_contains($lazy, 'data-state')], [true, false]);
 fails('tag: an id that isn\'t one', fn() => $components->tag('search', '/s', null, ['id' => '"><script>']), InvalidArgumentException::class);
 
+// serverOnly: Laravel in browser code, which is everything but a #[Server] method's body.
+$scan = fn(string $source) => Components::serverOnly($source);
+
+check('serverOnly: a helper in the template', $scan(<<<'BLADE'
+<?php
+use Unscripted\Ui\Component;
+new class extends Component {};
+?>
+<p>{{ auth()->user()->name }}</p>
+BLADE), ['auth() on line 5']);
+
+check('serverOnly: a helper in an action', $scan(<<<'BLADE'
+<?php
+use Unscripted\Ui\Component;
+new class extends Component {
+    public function save(): void { $id = auth()->id(); }
+};
+?>
+BLADE), ['auth() on line 4']);
+
+check('serverOnly: a #[Server] method may use it', $scan(<<<'BLADE'
+<?php
+use Unscripted\Ui\{Component, Server};
+new class extends Component {
+    #[Server]
+    public static function save(): void { $id = auth()->id(); }
+};
+?>
+BLADE), []);
+
+check('serverOnly: the app\'s own classes', $scan(<<<'BLADE'
+<?php
+use App\Models\Todo;
+use Unscripted\Ui\Component;
+new class extends Component {
+    public function save(): void { Todo::create([]); }
+};
+?>
+BLADE), ['Todo:: (App\Models\Todo) on line 5']);
+
+check('serverOnly: a facade, from its import', $scan(<<<'BLADE'
+<?php
+use Illuminate\Support\Facades\Gate;
+use Unscripted\Ui\Component;
+new class extends Component {};
+?>
+<p>@if (Gate::allows('x')) yes @endif</p>
+BLADE), ['Gate:: (Illuminate\Support\Facades\Gate) on line 6']);
+
+check('serverOnly: a method of the component isn\'t a helper', $scan(<<<'BLADE'
+<?php
+use Unscripted\Ui\Component;
+new class extends Component {
+    public function go(): void { $this->config(); $this->auth(); }
+    public function config(): void {}
+    public function auth(): void {}
+};
+?>
+BLADE), []);
+
+check('serverOnly: an import that isn\'t Laravel\'s', $scan(<<<'BLADE'
+<?php
+use Unscripted\Ui\{Component, State};
+new class extends Component {
+    #[State] public string $q = '';
+    public function go(): void { $d = new DateTimeImmutable(); }
+};
+?>
+<p>{{ $q }}</p>
+BLADE), []);
+
+check('serverOnly: everything it finds, in order', $scan(<<<'BLADE'
+<?php
+use Unscripted\Ui\{Component, Server};
+new class extends Component {
+    protected function mounted(): void { $x = session('k'); }
+    #[Server]
+    public static function ok(): void { $y = config('app.name'); }
+};
+?>
+<p>{{ route('home') }}</p>
+BLADE), ['session() on line 4', 'route() on line 9']);
+
+$checking = new Components($folder, $cache, null, null, true);
+file_put_contents("$folder/leaky.blade.php", <<<'BLADE'
+<?php
+use Unscripted\Ui\Component;
+new class extends Component {};
+?>
+<p>{{ auth()->id() }}</p>
+BLADE);
+fails('serverOnly: the render stops, saying where', fn() => $checking->render('leaky'), Error::class, 'auth() on line 5');
+fails('serverOnly: ...and says what to do', fn() => $checking->render('leaky'), Error::class, 'unscripted.share');
+
 array_map('unlink', [...glob("$cache/*"), ...glob("$folder/*.blade.php")]);
 rmdir($cache);
 rmdir($folder);

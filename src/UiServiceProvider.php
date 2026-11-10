@@ -39,6 +39,7 @@ final class UiServiceProvider extends ServiceProvider
             config('view.compiled'),
             fn(string $ability, array $args) => Gate::authorize($ability, $args),
             fn(array $data, array $rules, array $attributes = []) => validator($data, $rules, [], $attributes)->validate(),
+            config('unscripted.check', config('app.debug', false)),
         ));
     }
 
