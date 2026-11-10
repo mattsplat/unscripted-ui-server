@@ -19,6 +19,7 @@
         "laravel": { "providers": ["Unscripted\\UiServer\\UiServiceProvider"] }
     },
     "scripts": {
-        "test": "php tests/components.php && php tests/convert.php"
+        "test": "php tests/components.php && php tests/convert.php && php tests/ui-lock.php",
+        "sync-ui": "php bin/sync-ui.php"
     }
 }

@@ -1,0 +1,6 @@
+{
+    "package": "@mtjncn/ui",
+    "version": "0.1.0",
+    "sha256": "55b4d09a3953befe64ebdb9e5e88e95acbf943a70a4779f88c4685a7af9d0267",
+    "ahead": "the Navigator fragment fix, not released yet: repin once @mtjncn/ui 0.1.1 is published"
+}

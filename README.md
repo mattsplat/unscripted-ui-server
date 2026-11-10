@@ -75,14 +75,15 @@ See [installation](docs/installation.md).
 
 ## Developing
 
-This package's code lives in [unscripted-js](https://github.com/mattsplat/unscripted-js), at
-`packages/ui-server`, beside the browser packages. Change it there, then
-`npm run split-ui-server` copies it, history and all, to
-[mattsplat/unscripted-ui-server](https://github.com/mattsplat/unscripted-ui-server).
+This package is developed here. The browser side, `@mtjncn/ui` and the PHP pack it runs in,
+lives in [unscripted-js](https://github.com/mattsplat/unscripted-js).
 
-- `src/ui.php` is a copy of `packages/ui/ui.php`, so the server renders exactly what the browser
-  does: `npm run sync-ui` after changing the original. The tests fail if they differ.
-- `composer test` runs this package's own tests, `tests/components.php`, without Laravel.
+- `src/ui.php` isn't this package's code. It's `@mtjncn/ui`, the framework the browser runs,
+  vendored here so the server renders with the same file it serves at `/unscripted/ui.php`.
+  Change it upstream at `packages/ui/ui.php`, then `composer sync-ui -- <version>` here.
+  `ui.lock.json` says which release is vendored, and `composer test` fails if `src/ui.php`
+  stops matching it, so don't edit that file in this repo.
+- `composer test` runs this package's own tests, without Laravel.
 
 ## License
 
