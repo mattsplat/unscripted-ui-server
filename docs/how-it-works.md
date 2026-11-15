@@ -40,16 +40,28 @@ PHP has no `async`/`await`, and the browser's PHP is built without Fibers (WebAs
 the browser has no stack switching). So an action that waits returns a `Generator`, and `yield`
 is its `await`.
 
-For the browser's own promises, `promise()` wraps one so it can chain:
+An action can yield the browser's own promises the same way, and `async()` does it outside a
+component:
 
 ```php
-use function Unscripted\Ui\promise;
+use function Unscripted\Ui\async;
 use Unscripted as U;
 
-promise(U::fetch('/api/weather'))
-    ->then(fn($response) => $response->json())
-    ->then(function ($data) { $this->weather = $data; $this->refresh(); });
+public function loadWeather(): Generator
+{
+    $response = yield U::fetch('/api/weather');
+    $this->weather = yield $response->json();
+}
+
+async(function () {
+    [$a, $b] = yield [U::fetch('/a'), U::fetch('/b')]; // both at once
+    return [$a->status, $b->status];
+})->then(fn($statuses) => ...);
 ```
+
+A rejected browser promise is thrown in at the `yield` as `Unscripted\Ui\Rejected`. The cost
+of generators: only a function that returns `Generator` can wait, so a helper that waits is
+itself yielded (`yield $this->helper()`).
 
 ## 32-bit integers
 

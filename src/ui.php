@@ -1244,38 +1244,62 @@ abstract class Component
      * of one still waiting replaces it, so an old result can't land after a newer one. */
     private function run(string $name, Generator $flow, bool $loader = false): void
     {
-        $this->flows[$name] = [++$this->flowId, $flow, $loader];
+        // [id, the generator, is a loader, has made a server call]
+        $this->flows[$name] = [++$this->flowId, $flow, $loader, false];
         $this->advance($name, fn() => $flow->current());
     }
 
-    /** Resumes `$name`'s flow with `$resume`, then sends the server calls it yields next. */
+    /** Resumes `$name`'s flow with `$resume`, then waits for what it yields next: server calls
+     * are sent, promises waited for. */
     private function advance(string $name, Closure $resume): void
     {
         [$id, $flow, $loader] = $this->flows[$name];
-        try {
-            $resume();
-            $yielded = $flow->valid() ? $flow->current() : null;
-        } catch (Throwable $e) {
-            unset($this->flows[$name]);
-            if (!$loader && $e instanceof ServerError && $e->status === 422 && $e->errors !== []) {
-                return; // a validation failure the action didn't catch: the error bag shows it
+        // A loop for promises already settled: their values go straight back in.
+        while (true) {
+            try {
+                $resume();
+                $yielded = $flow->valid() ? $flow->current() : null;
+            } catch (Throwable $e) {
+                $this->finish($name);
+                if (!$loader && $e instanceof ServerError && $e->status === 422 && $e->errors !== []) {
+                    return; // a validation failure the action didn't catch: the error bag shows it
+                }
+                if ($e instanceof ServerError) {
+                    $this->failed($e);
+                    return;
+                }
+                throw $this->located($e);
             }
-            if ($e instanceof ServerError) {
-                $this->failed($e);
+            if (!$flow->valid()) {
+                $this->finish($name);
                 return;
             }
-            throw $this->located($e);
-        }
-        if (!$flow->valid()) {
-            unset($this->flows[$name]);
-            return;
+
+            // A browser promise (U::fetch(...)), a Promise, a generator, or an array of them:
+            // waited for as async() does, then the flow goes on and the component renders.
+            if (!Promise::awaitable($yielded)
+                && !(is_array($yielded) && $yielded !== [] && !array_filter($yielded, fn($item) => !Promise::awaitable($item)))) {
+                break;
+            }
+            $promise = Promise::of($yielded);
+            $result = $promise->result();
+            if ($result === null) {
+                $promise->done(
+                    fn($value) => $this->resume($name, $id, fn() => $flow->send($value)),
+                    fn($reason) => $this->resume($name, $id, fn() => $flow->throw(Promise::error($reason))),
+                );
+                return;
+            }
+            [$state, $value] = $result;
+            $resume = $state === 'fulfilled' ? fn() => $flow->send($value) : fn() => $flow->throw(Promise::error($value));
         }
 
         $calls = $yielded instanceof ServerCall ? [$yielded] : $yielded;
         if (!is_array($calls) || $calls === [] || array_filter($calls, fn($call) => !$call instanceof ServerCall)) {
             unset($this->flows[$name]);
-            throw new Error("$name yielded something that isn't a server call: yield static::method(...), or an array of them");
+            throw new Error("$name yielded something that isn't a server call or a promise: yield static::method(...), U::fetch(...), or an array of either kind");
         }
+        $this->flows[$name][3] = true;
         $this->send(array_values($calls), function (?array $results, ?ServerError $error) use ($name, $id, $loader, $yielded) {
             if (($this->flows[$name][0] ?? null) !== $id) {
                 return; // replaced by a newer flow
@@ -1283,12 +1307,33 @@ abstract class Component
             try {
                 $this->land($name, $loader, $yielded, $results, $error);
             } finally {
-                if (!$loader && !isset($this->flows[$name])) {
-                    $this->stale = true;
-                }
                 $this->refresh();
             }
         });
+    }
+
+    /** Ends `$name`'s flow. An action that made server calls marks the loaders stale, so they
+     * run again for fresh data, however its last step ended (a server reply or a promise). */
+    private function finish(string $name): void
+    {
+        if (!$this->flows[$name][2] && $this->flows[$name][3]) {
+            $this->stale = true;
+        }
+        unset($this->flows[$name]);
+    }
+
+    /** Goes on with `$name`'s flow after a promise it yielded settles, unless a newer flow
+     * replaced it, then renders. */
+    private function resume(string $name, int $id, Closure $resume): void
+    {
+        if (($this->flows[$name][0] ?? null) !== $id) {
+            return;
+        }
+        try {
+            $this->advance($name, $resume);
+        } finally {
+            $this->refresh();
+        }
     }
 
     /** A server reply for `$name`'s flow: an action's replaces the error bag (a 422's messages, or
@@ -1735,6 +1780,105 @@ final class Promise
         return $promise;
     }
 
+    public static function reject(mixed $reason): self
+    {
+        $promise = new self();
+        $promise->settle('rejected', $reason);
+        return $promise;
+    }
+
+    /** [$promise, $resolve, $reject], for turning a callback API into a promise:
+     * `[$p, $resolve] = Promise::withResolvers(); U::setTimeout(fn() => $resolve(null), 300);` */
+    public static function withResolvers(): array
+    {
+        $promise = new self();
+        return [$promise, fn(mixed $value = null) => $promise->adopt($value), fn(mixed $reason) => $promise->settle('rejected', $reason)];
+    }
+
+    /** Settles to an array of what each item settles to, keys kept; rejects with the first
+     * rejection. Items are anything async() can yield. */
+    public static function all(array $items): self
+    {
+        $promise = new self();
+        $results = array_fill_keys(array_keys($items), null);
+        $left = count($items);
+        if ($left === 0) {
+            $promise->settle('fulfilled', []);
+        }
+        foreach ($items as $key => $item) {
+            self::of($item)->done(function ($value) use ($key, &$results, &$left, $promise) {
+                $results[$key] = $value;
+                if (--$left === 0) {
+                    $promise->settle('fulfilled', $results);
+                }
+            }, fn($reason) => $promise->settle('rejected', $reason));
+        }
+        return $promise;
+    }
+
+    /** Whether async() can wait for `$value`: a Promise, a host promise or a Generator. */
+    public static function awaitable(mixed $value): bool
+    {
+        return $value instanceof self || $value instanceof Generator
+            || (is_object($value) && get_class($value) === 'HostObject' && $value->then !== null);
+    }
+
+    /** `$value` as a Promise: a host promise wrapped, a Generator run (see async()), an array
+     * waited for together (all()), anything else already fulfilled with itself. */
+    public static function of(mixed $value): self
+    {
+        return match (true) {
+            $value instanceof self => $value,
+            $value instanceof Generator => self::run($value),
+            is_array($value) => self::all($value),
+            $value instanceof ServerCall => throw new Error('a server call is yielded from a component action, not from async()'),
+            default => self::resolve($value),
+        };
+    }
+
+    /** Runs a generator as an async function: each value it yields is waited for (see of())
+     * and sent back in, a rejection thrown in at the yield. Settles to what it returns, or
+     * rejects with what it throws. */
+    public static function run(Generator $flow): self
+    {
+        $promise = new self();
+        $starting = true;
+        $step = function (Closure $resume) use (&$step, &$starting, $flow, $promise) {
+            // A loop, not a callback per yield: what's already settled goes straight back in,
+            // so a long run of them doesn't nest calls.
+            while (true) {
+                try {
+                    $resume();
+                    if (!$flow->valid()) {
+                        $promise->adopt($flow->getReturn());
+                        return;
+                    }
+                    $next = self::of($flow->current());
+                } catch (Throwable $e) {
+                    $promise->settle('rejected', $e);
+                    // Nothing is waiting for it and the caller has moved on: say so, or it's lost.
+                    if (!$starting && $promise->waiting === []) {
+                        throw $e;
+                    }
+                    return;
+                }
+                $result = $next->result();
+                if ($result === null) {
+                    $next->done(
+                        fn($value) => $step(fn() => $flow->send($value)),
+                        fn($reason) => $step(fn() => $flow->throw(self::error($reason))),
+                    );
+                    return;
+                }
+                [$state, $value] = $result;
+                $resume = $state === 'fulfilled' ? fn() => $flow->send($value) : fn() => $flow->throw(self::error($value));
+            }
+        };
+        $step(fn() => $flow->current());
+        $starting = false;
+        return $promise;
+    }
+
     public function then(?Closure $fulfilled = null, ?Closure $rejected = null): self
     {
         $next = new self();
@@ -1743,6 +1887,28 @@ final class Promise
             $this->flush();
         }
         return $next;
+    }
+
+    /** ['fulfilled', value] or ['rejected', reason] once it's settled; null while pending. */
+    public function result(): ?array
+    {
+        return $this->state === 'pending' ? null : [$this->state, $this->value];
+    }
+
+    /** A rejection's reason as something to throw into a generator: a host's as Rejected. */
+    public static function error(mixed $reason): Throwable
+    {
+        return $reason instanceof Throwable ? $reason : new Rejected($reason);
+    }
+
+    /** Like then(), but the end of a chain: what a callback throws isn't caught into a promise,
+     * it goes on up (to the console, from a host callback). */
+    public function done(Closure $fulfilled, Closure $rejected): void
+    {
+        $this->waiting[] = [$fulfilled, $rejected, null];
+        if ($this->state !== 'pending') {
+            $this->flush();
+        }
     }
 
     public function catch(Closure $rejected): self
@@ -1776,6 +1942,10 @@ final class Promise
         $this->waiting = [];
         foreach ($waiting as [$fulfilled, $rejected, $next]) {
             $handler = $this->state === 'fulfilled' ? $fulfilled : $rejected;
+            if ($next === null) {
+                $handler($this->value); // done(): uncaught
+                continue;
+            }
             if ($handler === null) {
                 $next->settle($this->state, $this->value);
                 continue;
@@ -1793,6 +1963,46 @@ final class Promise
 function promise(object $host): Promise
 {
     return Promise::from($host);
+}
+
+/**
+ * Runs `$flow` as an async function, `yield` as its `await`:
+ *
+ *   async(function () {
+ *       $response = yield U::fetch('/api/items');
+ *       $items = yield $response->json();
+ *       [$a, $b] = yield [U::fetch('/a'), U::fetch('/b')];   // both at once
+ *       return $items;
+ *   })->then(fn($items) => ...);
+ *
+ * It yields host promises, Promises, other generators (`yield $this->load()`) and arrays of
+ * them. A rejection is thrown in at its yield (a host's reason as Rejected). Returns a Promise
+ * of what it returns. A failure nothing waits for goes to the console.
+ */
+function async(Closure|Generator $flow): Promise
+{
+    if ($flow instanceof Closure) {
+        try {
+            $flow = $flow();
+        } catch (Throwable $e) {
+            return Promise::reject($e);
+        }
+        if (!$flow instanceof Generator) {
+            return Promise::resolve($flow);
+        }
+    }
+    return Promise::run($flow);
+}
+
+/** A host promise's rejection, thrown into an async function: `$reason` is what it rejected
+ * with (a JavaScript Error, usually). */
+final class Rejected extends Exception
+{
+    public function __construct(public readonly mixed $reason)
+    {
+        $message = is_string($reason) ? $reason : (is_object($reason) ? $reason->message ?? null : null);
+        parent::__construct(is_string($message) ? $message : 'rejected');
+    }
 }
 
 /** Headers for a JSON request to the app, with its CSRF token from <meta name="csrf-token">. */
